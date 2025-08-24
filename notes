@@ -1,0 +1,11 @@
+# Notes
+
+das ganze so updated, dass es im idealfall mit procmacro tts umgehen kann,
+sodass man error locations im output bekommt waere cool
+
+Wahrscheinlich sollte ich mich von der no-deps idee verabschieden
+und Seq in seinen eigenen crate packen. Ich will vermutlich das error macro ueber
+das ich geschrieben hatte und ich brauche proc-macro2
+
+man kann dinge in quote verwenden, wenn sie ToTokens implementieren
+um ToTokens zu implementieren ist der TokenStreamExt trait praktisch
