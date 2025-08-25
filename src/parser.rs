@@ -15,115 +15,120 @@ pub enum ParseResult {
     InputEmpty,
 }
 
-pub trait Parser {
-    fn parse(&self, input: TokenStream) -> ParseResult;
+fn parse_single_elem(
+    input: TokenStream,
+    f: impl FnOnce(TokenTree) -> Result<Expr, TokenTree>,
+) -> ParseResult {
+    let mut iter = input.into_iter();
+    let elem = iter.next();
+    if let Some(elem) = elem {
+        match f(elem) {
+            Ok(expr) => ParseResult::Match(ParseMatch {
+                stream: iter.collect(),
+                value: expr,
+            }),
+            Err(elem) => ParseResult::Missmatch(once(elem).chain(iter).collect()),
+        }
+    } else {
+        ParseResult::InputEmpty
+    }
 }
 
-macro_rules! define_parser {
-    ($name:ident: |$self:ident, $iter: ident, $elem:ident| { $($body:tt)* }) => {
-        struct $name;
-        impl Parser for $name {
-            fn parse(
-                &$self,
-                input: TokenStream,
-            ) -> ParseResult {
-                let mut $iter = input.into_iter();
-                let $elem = $iter.next();
-                if let Some($elem) = $elem {
-                    $($body)*
-                } else {
-                    ParseResult::InputEmpty
-                }
-            }
-        }
-    };
-}
-
-define_parser! { LiteralParser: |self, iter, elem| {
-    if let TokenTree::Literal(lit) = elem {
-        ParseResult::Match(ParseMatch {
-            stream: iter.collect(),
-            value: Expr::Literal(lit),
-        })
-    } else {
-        ParseResult::Missmatch(once(elem).chain(iter).collect())
-    }
-}}
-
-define_parser! { IdentifierParser: |self, iter, elem| {
-    if let TokenTree::Ident(ident) = elem {
-        ParseResult::Match(ParseMatch {
-            stream: iter.collect(),
-            value: Expr::Identifier(ident),
-        })
-    } else {
-        ParseResult::Missmatch(once(elem).chain(iter).collect())
-    }
-
-}}
-
-struct OperatorParser;
-impl Parser for OperatorParser {
-    fn parse(&self, input: TokenStream) -> ParseResult {
-        if input.is_empty() {
-            return ParseResult::InputEmpty;
-        }
-
-        let mut iter = input.into_iter();
-        let mut parsed = vec![];
-        let mut first_illegal = None;
-        while let Some(tt) = iter.next() {
-            if let TokenTree::Punct(_) = tt {
-                parsed.push(tt);
-            } else {
-                first_illegal = Some(tt);
-                break;
-            }
-        }
-
-        if parsed.is_empty() {
-            ParseResult::Missmatch(first_illegal.into_iter().chain(iter).collect())
+fn parse_literal(input: TokenStream) -> ParseResult {
+    parse_single_elem(input, |elem| {
+        if let TokenTree::Literal(lit) = elem {
+            Ok(Expr::Literal(lit))
         } else {
-            let span = parsed[0]
-                .span()
-                .join(parsed.last().unwrap().span())
-                .unwrap();
-            let stream = parsed.into_iter().collect();
-            let mut res: TokenTree = TokenTree::Group(Group::new(Delimiter::None, stream));
-            res.set_span(span);
-            let remaining_stream = first_illegal.into_iter().chain(iter).collect();
-            ParseResult::Match(ParseMatch {
-                stream: remaining_stream,
-                value: Expr::Operator(res),
-            })
+            Err(elem)
         }
+    })
+}
+
+fn parse_ident(input: TokenStream) -> ParseResult {
+    parse_single_elem(input, |elem| {
+        if let TokenTree::Ident(ident) = elem {
+            Ok(Expr::Identifier(ident))
+        } else {
+            Err(elem)
+        }
+    })
+}
+
+fn parse_operator(input: TokenStream) -> ParseResult {
+    if input.is_empty() {
+        return ParseResult::InputEmpty;
+    }
+
+    // eat all all puncutation elements,
+    // store the first non-matching one to add it back later
+    let mut iter = input.into_iter();
+    let mut parsed = vec![];
+    let mut first_non_match = None;
+    while let Some(tt) = iter.next() {
+        if let TokenTree::Punct(_) = tt {
+            parsed.push(tt);
+        } else {
+            first_non_match = Some(tt);
+            break;
+        }
+    }
+
+    if parsed.is_empty() {
+        ParseResult::Missmatch(first_non_match.into_iter().chain(iter).collect())
+    } else {
+        // set a common span for all pieces of the operator
+        let span = parsed[0]
+            .span()
+            .join(parsed.last().unwrap().span())
+            .unwrap();
+        let stream = parsed.into_iter().collect();
+        let mut res: TokenTree = TokenTree::Group(Group::new(Delimiter::None, stream));
+        res.set_span(span);
+
+        let remaining_stream = first_non_match.into_iter().chain(iter).collect();
+        ParseResult::Match(ParseMatch {
+            stream: remaining_stream,
+            value: Expr::Operator(res),
+        })
     }
 }
 
-define_parser! { RustExprParser: |self, iter, elem| {
-    if let TokenTree::Group(g) = &elem && g.delimiter() == Delimiter::Brace {
-        ParseResult::Match(ParseMatch {
-            stream: iter.collect(),
-            value: Expr::RustExpr(elem),
-        })
-    } else {
-        ParseResult::Missmatch(once(elem).chain(iter).collect())
-    }
-}}
+fn parse_rust_expr(input: TokenStream) -> ParseResult {
+    parse_single_elem(input, |elem| {
+        if let TokenTree::Group(g) = &elem
+            && g.delimiter() == Delimiter::Brace
+        {
+            Ok(Expr::RustExpr(elem))
+        } else {
+            Err(elem)
+        }
+    })
+}
 
-define_parser! { ListParser: |self, iter, elem| {
-    if let TokenTree::Group(g) = &elem && g.delimiter() == Delimiter::Parenthesis {
+fn parse_list(input: TokenStream) -> ParseResult {
+    if input.is_empty() {
+        return ParseResult::InputEmpty;
+    }
+
+    let mut iter = input.into_iter();
+    let elem = iter
+        .next()
+        .expect("Input emtpy. Did you remove the check above?");
+    if let TokenTree::Group(g) = &elem
+        && g.delimiter() == Delimiter::Parenthesis
+    {
+        // this appears to be a list, let's parse the children
         let mut res = vec![];
         let mut child_stream = g.stream();
 
         let matched = loop {
-            match ExpressionParser.parse(child_stream) {
+            match parse_expression(child_stream) {
                 ParseResult::Match(parse_match) => {
                     res.push(parse_match.value);
                     child_stream = parse_match.stream;
-                },
-                ParseResult::Missmatch(_) => {break false;},
-                ParseResult::InputEmpty => {break true},
+                }
+                ParseResult::Missmatch(_) => break false,
+                ParseResult::InputEmpty => break true,
             }
         };
 
@@ -138,51 +143,41 @@ define_parser! { ListParser: |self, iter, elem| {
     } else {
         ParseResult::Missmatch(once(elem).chain(iter).collect())
     }
-}}
-
-struct ExpressionParser;
-impl Parser for ExpressionParser {
-    fn parse(&self, input: TokenStream) -> ParseResult {
-        OrParser::new(vec![
-            Box::new(LiteralParser),
-            Box::new(IdentifierParser),
-            Box::new(OperatorParser),
-            Box::new(RustExprParser),
-            Box::new(ListParser),
-        ])
-        .parse(input)
-    }
 }
 
-struct OrParser {
-    subparsers: Vec<Box<dyn Parser>>,
+pub fn parse_expression(input: TokenStream) -> ParseResult {
+    parse_first_matching(
+        &[
+            parse_literal,
+            parse_ident,
+            parse_operator,
+            parse_rust_expr,
+            parse_list,
+        ],
+        input,
+    )
 }
 
-impl OrParser {
-    fn new(subparsers: Vec<Box<dyn Parser>>) -> Self {
-        Self { subparsers }
-    }
-}
-
-impl Parser for OrParser {
-    fn parse(&self, mut input: TokenStream) -> ParseResult {
-        for parser in &self.subparsers {
-            match parser.parse(input) {
-                res @ (ParseResult::Match(_) | ParseResult::InputEmpty) => {
-                    return res;
-                }
-                ParseResult::Missmatch(token_stream) => {
-                    input = token_stream;
-                }
+fn parse_first_matching(
+    parsers: &[fn(TokenStream) -> ParseResult],
+    mut input: TokenStream,
+) -> ParseResult {
+    for parser in parsers {
+        match parser(input) {
+            res @ (ParseResult::Match(_) | ParseResult::InputEmpty) => {
+                return res;
+            }
+            ParseResult::Missmatch(token_stream) => {
+                input = token_stream;
             }
         }
-
-        ParseResult::Missmatch(input)
     }
+
+    ParseResult::Missmatch(input)
 }
 
-pub fn parse(stream: TokenStream) -> ParseResult {
-    ExpressionParser.parse(stream)
+pub fn parse(stream: impl Into<TokenStream>) -> ParseResult {
+    parse_expression(stream.into())
 }
 
 #[cfg(test)]
