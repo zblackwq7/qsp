@@ -1,5 +1,5 @@
 use core::fmt;
-use std::error::Error;
+use std::{error::Error, fmt::Display};
 
 use crate::expr::Expr;
 
@@ -51,12 +51,15 @@ macro_rules! err_enum{
 #[derive(Debug)]
 pub struct CastError {
     desired: &'static str,
-    actual: Expr,
+    actual: String,
 }
 
 impl CastError {
     pub fn new(desired: &'static str, actual: Expr) -> Self {
-        Self { desired, actual }
+        Self {
+            desired,
+            actual: actual.to_string(),
+        }
     }
 }
 
@@ -75,14 +78,41 @@ err_enum! { HeadTailSplitError, CastError, ListEmptyError }
 
 #[derive(Debug)]
 pub struct ElemNumberError {
-    actual: Expr,
+    actual: String,
 }
 
 impl ElemNumberError {
     pub fn new(actual: Expr) -> Self {
-        Self { actual }
+        Self {
+            actual: actual.to_string(),
+        }
     }
 }
 
 impl_error! { ElemNumberError, self, "wrong number of elements for this operation. {:?}", self.actual }
 err_enum! { PairSplitError, CastError, ElemNumberError }
+
+// =======================================================================================
+
+#[derive(Debug)]
+pub enum TryFlatMapError<E> {
+    CastError(CastError),
+    FnError(E),
+}
+
+impl<E: Display> Display for TryFlatMapError<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TryFlatMapError::CastError(e) => write!(f, "{e}"),
+            TryFlatMapError::FnError(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl<E> From<E> for TryFlatMapError<E> {
+    fn from(value: E) -> Self {
+        Self::FnError(value)
+    }
+}
+
+impl<E: std::fmt::Debug + std::fmt::Display> Error for TryFlatMapError<E> {}

@@ -1,38 +1,39 @@
-pub enum Seq<T, I> {
-    Iter(I),
-    Vec(Vec<T>),
-}
+pub struct Seq<T>(Vec<T>);
 
-pub enum SeqIter<T, I> {
-    Iter(I),
-    Vec(<Vec<T> as IntoIterator>::IntoIter),
-}
-
-impl<T, I: Iterator<Item = T>> Iterator for SeqIter<T, I> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            SeqIter::Iter(mut ref i) => i.next(),
-            SeqIter::Vec(mut ref i) => i.next(),
-        }
+impl<T> Seq<T> {
+    pub fn once(t: T) -> Self {
+        Self(vec![t])
     }
 }
 
-impl<T, I> IntoIterator for Seq<T, I> {
+impl<T> FromIterator<T> for Seq<T> {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        Self(iter.into_iter().collect())
+    }
+}
+
+impl<T> IntoIterator for Seq<T> {
     type Item = T;
-    type IntoIter = SeqIter<T, I>;
+
+    type IntoIter = <Vec<T> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
-        match self {
-            Seq::Iter(i) => SeqIter::Iter(i),
-            Seq::Vec(items) => SeqIter::Vec(items.into_iter()),
-        }
+        self.0.into_iter()
     }
 }
 
-impl<T> Seq<Seq<T>> {
-    pub fn flatten(self) -> Seq<T> {
-        Seq(self.0.into_iter().flatten().collect())
+impl<'a, T> IntoIterator for &'a Seq<T> {
+    type Item = &'a T;
+
+    type IntoIter = <&'a Vec<T> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<T> From<Vec<T>> for Seq<T> {
+    fn from(value: Vec<T>) -> Self {
+        Self(value)
     }
 }

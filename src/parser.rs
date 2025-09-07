@@ -176,8 +176,12 @@ fn parse_first_matching(
     ParseResult::Missmatch(input)
 }
 
-pub fn parse(stream: impl Into<TokenStream>) -> ParseResult {
-    parse_expression(stream.into())
+pub fn parse(stream: impl Into<TokenStream>) -> Option<Expr> {
+    if let ParseResult::Match(m) = parse_expression(stream.into()) {
+        Some(m.value)
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -191,7 +195,7 @@ mod tests {
             panic!("Couldnt parse `{src}` to tokenstream");
         };
 
-        match super::parse(ts) {
+        match super::parse_expression(ts) {
             ParseResult::Match(parse_match) => {
                 if parse_match.stream.into_iter().next().is_some() {
                     panic!("Could parse `src` as Expr, but result stream isn't empty");
