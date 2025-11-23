@@ -77,7 +77,7 @@ fn main() -> Result<()> {
 
 The AST-Node type (`Expr`) has the following variants:
 
-- Literal: any literal (`15u`, `"Hi"`, `true`)
+- Literal: any literal (`15u8`, `"Hi"`, `true`)
 - Identifier: a normal identifier
 - Operator: a sequence of punctuation, (`.`, `->`)
 - RustExpr: basically a "don't look at it closely". Must be surrounded
