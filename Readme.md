@@ -75,7 +75,16 @@ fn main() -> Result<()> {
   
 ```
 
-The following functions are defined on the `Expr` type, which make it
+The AST-Node type (`Expr`) has the following variants:
+
+- Literal: any literal (`15u`, `"Hi"`, `true`)
+- Identifier: a normal identifier
+- Operator: a sequence of punctuation, (`.`, `->`)
+- RustExpr: basically a "don't look at it closely". Must be surrounded
+  by braces (`{ |x| {println!("There are {x} vowels in {input}"); x}}`)
+- List: Any number of valid expressions delimited by parentheses.
+
+The following functions are defined on `Expr`, which make it
 very easy to use. The error messages contain as much information as possible,
 and should make it easy to catch mistakes, even if you just liberally use `?`
 everywhere.
