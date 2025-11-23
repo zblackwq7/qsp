@@ -1,11 +1,8 @@
 use proc_macro2::{Ident, Literal, TokenTree};
 
-use crate::{
-    Seq,
-    errors::{
-        CastError, CastResult, ElemNumberError, HeadTailSplitError, ListEmptyError, PairSplitError,
-        TryFlatMapError,
-    },
+use crate::errors::{
+    CastError, CastResult, ElemNumberError, HeadTailSplitError, ListEmptyError, PairSplitError,
+    TryFlatMapError,
 };
 
 #[derive(Clone, Debug)]
@@ -24,15 +21,19 @@ impl std::fmt::Display for Expr {
             Expr::Identifier(ident) => write!(f, "{ident}"),
             Expr::RustExpr(token_tree) | Expr::Operator(token_tree) => write!(f, "{token_tree}"),
             Expr::List(exprs) => {
-                write!(
-                    f,
-                    "({})",
-                    exprs
-                        .iter()
-                        .map(|x| x.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
+                if exprs.is_empty() {
+                    write!(f, "()")
+                } else {
+                    write!(
+                        f,
+                        "{}",
+                        exprs
+                            .iter()
+                            .map(|x| x.to_string())
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    )
+                }
             }
         }
     }
@@ -92,7 +93,7 @@ impl Expr {
         }
     }
 
-    pub fn head_tail_split(&self) -> Result<(&Expr, BorrowedList), HeadTailSplitError> {
+    pub fn head_tail_split(&self) -> Result<(&Expr, BorrowedList<'_>), HeadTailSplitError> {
         if let [head, tail @ ..] = self.as_slice()? {
             Ok((head, BorrowedList(tail)))
         } else {
@@ -108,7 +109,7 @@ impl Expr {
         }
     }
 
-    pub fn try_flat_map<F, T, E, R>(&self, f: F) -> Result<Seq<T>, TryFlatMapError<E>>
+    pub fn try_flat_map<F, T, E, R>(&self, f: F) -> Result<Vec<T>, TryFlatMapError<E>>
     where
         F: FnMut(&Expr) -> Result<R, E>,
         R: IntoIterator<Item = T>,
@@ -126,7 +127,7 @@ impl Expr {
 }
 
 impl<'a> BorrowedList<'a> {
-    pub fn try_flat_map<F, T, E, R>(&self, f: F) -> Result<Seq<T>, E>
+    pub fn try_flat_map<F, T, E, R>(&self, f: F) -> Result<Vec<T>, E>
     where
         F: FnMut(&Expr) -> Result<R, E>,
         R: IntoIterator<Item = T>,
@@ -139,7 +140,7 @@ impl<'a> BorrowedList<'a> {
         &self.0
     }
 
-    pub fn head_tail_split(&self) -> Result<(&Expr, BorrowedList), ListEmptyError> {
+    pub fn head_tail_split(&self) -> Result<(&Expr, BorrowedList<'_>), ListEmptyError> {
         if let [head, tail @ ..] = self.0 {
             Ok((head, BorrowedList(tail)))
         } else {
@@ -153,6 +154,16 @@ impl<'a> BorrowedList<'a> {
         } else {
             Err(ElemNumberError::new(Expr::List(self.0.to_vec())))
         }
+    }
+}
+
+impl<'a> IntoIterator for BorrowedList<'a> {
+    type Item = &'a Expr;
+
+    type IntoIter = std::slice::Iter<'a, Expr>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 

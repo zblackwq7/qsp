@@ -1,8 +1,8 @@
 use anyhow::Result;
 use proc_macro2::TokenStream;
-use qsp::{Expr, Seq};
+use qsp::Expr;
 
-type Entries = Seq<Entry>;
+type Entries = Vec<Entry>;
 type Entry = ((String, String), String);
 
 fn main() -> Result<()> {
@@ -12,7 +12,8 @@ fn main() -> Result<()> {
             ("device" ( "wakeup" "sleep" ))
 
             ("host" (
-                "status" ("devices" ("list" "scan"))
+                "status"
+                ("devices" ("list" "scan"))
             ))
         ))
         (get ("lala"))
@@ -35,10 +36,10 @@ fn eval_route_tree(
     mname: &str,
 ) -> Result<Entries> {
     if let Ok(strlit) = rt_expr.as_str_lit() {
-        Ok(Seq::once((
+        Ok(vec![(
             (mname.into(), pname.into()),
             format!("{current_prefix}/{}", strlit.contained_string()),
-        )))
+        )])
     } else {
         let (new_prefix_elem, children) = rt_expr.pair_split()?;
         Ok(children.try_flat_map(|rt| {
